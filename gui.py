@@ -6,7 +6,7 @@ print(sys.path)
 import pygame
 import argparse
 
-import memory_grid
+from env import GridMazeEnv
 
 
 class GridMazeGUI:
@@ -73,6 +73,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     env_name = 'GridMaze{}x{}'.format(args.size, args.size)
-    env = memory_grid.GridMazeEnv(env_name, rand_name=args.rand_name, view_distance=args.view_distance, render_mode='human')
+    env = GridMazeEnv(env_name, rand_name=args.rand_name, view_distance=args.view_distance, render_mode='human')
     gui = GridMazeGUI(env, seed=42, full_view=args.full_view)
     gui.run()

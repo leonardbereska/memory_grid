@@ -5,7 +5,7 @@ import gymnasium as gym
 from collections import namedtuple
 # import gym  # needs to be uniform for the whole code base
 
-from memory_grid.maze import GridMaze, get_maze_specs
+from maze import GridMaze, get_maze_specs
 
 # TODO all the randomization should be done in a separate file
 rand_specs = namedtuple('rand_specs', 'seed maze_not_fixed target_not_fixed agent_not_fixed sequence_not_fixed')
