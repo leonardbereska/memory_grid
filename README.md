@@ -57,12 +57,14 @@ The `--view_distance` argument specifies the distance of the agent's field of vi
 The `--rand_name` argument specifies a randomization for the maze. 'm' stands for maze, 't' for target, 'a' for agent, 's' for seed, '42' for the seed value. The 'o/x' behind each letter (m/t/a) indicates if the entity is randomized, the 'x' stands for fixed, 'o' for random.
 
 You can play the GUI from the perspective of an agent with limited field of view, or from the perspective of an omniscient agent with full view of the entire grid.
-
+| Agent's perspective | Fullview |
+|-------|----------|
+|![agent](https://github.com/leonardbereska/memory_grid/assets/34320299/0fe394ba-71b7-4302-b238-3acf83aded99) | ![fullview](https://github.com/leonardbereska/memory_grid/assets/34320299/8ccedd55-a257-4bad-9743-416803ce48d7)|
 Agent's perspective (partially observable)
-()[https://github.com/leonardbereska/memory_grid/assets/34320299/0fe394ba-71b7-4302-b238-3acf83aded99]
+
 
 Full view (shading indicates field of view for agent)
-https://github.com/leonardbereska/memory_grid/assets/34320299/8ccedd55-a257-4bad-9743-416803ce48d7
+
 
 
 
