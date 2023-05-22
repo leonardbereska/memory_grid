@@ -15,11 +15,8 @@ In addition to the standard maze types (9x9, 11x11, 13x13, 15x15), we also inclu
 This environment is designed for memory tasks and features a 2D grid layout, as opposed to the 3D layout of the standard memory environment. The agent's observation is partial and egocentric, but from a topview perspective. Movement is restricted to discrete grid positions, rather than continuous motion.
 
 
-
 - walls are black, empty cells white, the targets are square and have different colors
-- the agent is roun
-d and has the color of the current target
-
+- the agent is round and has the color of the current target
 
 
 ### Task: Treasure Hunt
