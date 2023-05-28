@@ -1,14 +1,14 @@
+import gym
 import time
 import pygame
 import numpy as np
-# import gymnasium as gym
 from collections import namedtuple
-import gym  # needs to be uniform for the whole code base
 
-from memory_grid.maze import GridMaze, get_maze_specs
+# from memory_grid.maze import GridMaze, grid_mazes
+from maze import GridMaze, grid_mazes
 
 # TODO all the randomization should be done in a separate file
-rand_specs = namedtuple('rand_specs', 'seed maze_not_fixed target_not_fixed agent_not_fixed sequence_not_fixed')
+rand_specs = namedtuple('rand_specs', 'seed maze_not_fixed target_not_fixed agent_not_fixed')
 
 
 def get_rand_specs(rand_name):
@@ -30,12 +30,10 @@ def get_rand_specs(rand_name):
     maze_not_fixed = not_fixed('m')
     target_not_fixed = not_fixed('t')
     agent_not_fixed = not_fixed('a')
-    sequence_not_fixed = True
     return rand_specs(seed,
                       maze_not_fixed,
                       target_not_fixed,
-                      agent_not_fixed,
-                      sequence_not_fixed)
+                      agent_not_fixed)
 
 
 class GridMazeEnv():
@@ -51,10 +49,11 @@ class GridMazeEnv():
         self.observation_image_size = 2 * self.view_distance + 1
         self.rand_specs = get_rand_specs(rand_name)
         self.random_seed = self.rand_specs.seed
-        self.max_episode_steps = 200  # TODO make this a hyperparameter?
 
-        self.maze_specs = get_maze_specs(env_name)
+        self.maze_specs = grid_mazes[env_name]
         self.n_targets = self.maze_specs.n_targets
+        self.max_episode_steps = self.maze_specs.max_episode_steps
+
         self.current_target_id = None
 
         self.grid_maze = GridMaze(self.maze_specs, seed=self.get_seed('maze'))
@@ -63,13 +62,9 @@ class GridMazeEnv():
         self.action_space = gym.spaces.Discrete(4)  # 0: up, 1: right, 2: down, 3: left
         self.action_space.seed(self.random_seed)  # seed for action_space sampler
 
-        self.observable_entities = [' ', '#'] + [str(t) for t in
-                                                 range(self.n_targets)]  # ' ' is empty space, '#' is wall
-        # self.observation_space = gym.spaces.Dict({
-        #     'image': gym.spaces.Box(low=0, high=255, shape=(3, image_size, image_size), dtype=np.uint8),
-        #     'target': gym.spaces.Discrete(self.n_targets),
-        # })
-        image_size = 2 * self.view_distance + 1 + 2  # size of the image, e.g. 3x3, 5x5, 7x7, etc. (2 for padding with target id)
+        self.observable_entities = [' ', '#'] + [str(t) for t in range(self.n_targets)]  # ' ' empty space, '#' wall
+
+        image_size = 2 * self.view_distance + 1 + 2  # size of the image, e.g. 3x3, (2 for padding with target id)
         self.observation_space = gym.spaces.Box(low=0, high=255, shape=(3, image_size, image_size), dtype=np.uint8)
         self.render_mode = render_mode
         self.window = None
@@ -79,6 +74,7 @@ class GridMazeEnv():
         self.grid_maze.seed(seed)
         self.action_space.seed(seed)
         return seed
+
     def get_seed(self, for_what):
         """
         Get seed for random number generator.
@@ -111,8 +107,8 @@ class GridMazeEnv():
             self.randomize_agent_position()
         if self.get_seed('target') is None:
             self.randomize_target_position()
-            # mark targets in maze entity layer
         for i, target_position in enumerate(self.target_positions):
+            # mark target positions in maze
             self.maze[target_position[0], target_position[1]] = str(i)
         return self.get_observation(), {}
 
@@ -156,7 +152,6 @@ class GridMazeEnv():
 
     def step(self, action):
         self.update_agent_position(action)
-
         reward = self.get_reward()
         observation = self.get_observation()
         terminated = False
@@ -181,13 +176,8 @@ class GridMazeEnv():
         else:
             raise ValueError('Invalid action: {}'.format(action))
 
-        if not self.is_wall(new_position):
-            if self.verbose:
-                print('moved to new position: ', *new_position)
+        if not self.is_wall(new_position):  # only walk if new position is not a wall
             self.agent_position = new_position
-        else:
-            if self.verbose:
-                print('hit wall, stay at: ', *self.agent_position)
 
     def get_reward(self):
         reward = 0
@@ -212,13 +202,13 @@ class GridMazeEnv():
         """
         a = self.agent_position
         v = self.view_distance  # for example, v=1: 3x3, v=2: 5x5 space around agent
-        
+
         maze = self.maze.copy()
         # add a border of walls around the maze to avoid index out of bounds errors
-        maze = np.pad(maze, v-1, 'constant', constant_values='#')
+        maze = np.pad(maze, v - 1, 'constant', constant_values='#')
         # observation = self.maze[a[0] - v:a[0] + v + 1, a[1] - v:a[1] + v + 1]
         # shift all coordinates by v-1 to account for the added border
-        observation = maze[a[0]-1:a[0] + 2*v, a[1]-1:a[1] + 2*v]
+        observation = maze[a[0] - 1:a[0] + 2 * v, a[1] - 1:a[1] + 2 * v]
         return observation
 
     def entity_to_color(self, entity):
@@ -237,26 +227,17 @@ class GridMazeEnv():
                              np.array([255, 255, 0]), np.array([0, 255, 255]), np.array([255, 0, 255])]
             return target_colors[int(entity)]
 
-
     def get_observation(self):
         visible_entities = self.observe_field_of_view()
 
-        # surround the visible entities with walls
-
+        # surround the visible entities with the current target id as prompt
         visible_entities = np.pad(visible_entities, 1, 'constant', constant_values=str(self.current_target_id))
-
 
         image = np.zeros((visible_entities.shape[0], visible_entities.shape[1], 3), dtype=np.uint8)
         for i in range(visible_entities.shape[0]):
             for j in range(visible_entities.shape[1]):
                 image[i, j] = self.entity_to_color(visible_entities[i, j])
-        # create a frame around the image with the current target color
-        # pad the image array with 1 pixel on each side
-        # pixel = self.entity_to_color(str(self.current_target_id))
-        # image = pad_image(image, 1, pixel)
-        # observation = {'image': image, 'target': self.current_target_id}
-        # swap axes from hwc to chw
-        image = np.swapaxes(image, 2, 0)
+        image = np.swapaxes(image, 2, 0)  # swap axes to match PyTorch format (C, H, W)
         return image
 
     def print_maze(self):
@@ -297,7 +278,7 @@ class GridMazeEnv():
             def get_maze_image():
                 a = self.agent_position
                 v = self.view_distance
-                maze = self.maze.copy()  
+                maze = self.maze.copy()
                 image = np.zeros((maze.shape[0], maze.shape[1], 3))
 
                 for i in range(maze.shape[0]):
@@ -308,14 +289,13 @@ class GridMazeEnv():
                             image[i, j] = image[i, j] * 0.5  # zero for black, 0.5 for gray 
 
                 return image, maze
-            
 
             def get_image_around_agent():
                 a = self.agent_position
                 v = self.view_distance
-                maze = self.maze.copy()  
+                maze = self.maze.copy()
                 # add a border of walls around the maze to avoid index out of bounds errors
-                maze = np.pad(maze, v-1, 'constant', constant_values='#')
+                maze = np.pad(maze, v - 1, 'constant', constant_values='#')
                 # shift all coordinates by v-1 to account for the added border
                 image = np.zeros((2 * v + 1, 2 * v + 1, 3))
 
@@ -328,7 +308,7 @@ class GridMazeEnv():
                         # print(i, j, image[i, j])
 
                 return image, maze
-            
+
             if full_view:
                 image, maze = get_maze_image()
             else:
@@ -344,13 +324,12 @@ class GridMazeEnv():
 
             image = np.transpose(image, (1, 0, 2))  # convert to (width, height, channels) for pygame
             screen_size = 640  # TODO make this a hyperparameter
- 
+
             if self.window is None:
                 pygame.init()
                 self.window = pygame.display.set_mode((screen_size, screen_size))
                 pygame.display.set_caption('Maze')
 
-           
             image_surface = pygame.surfarray.make_surface(image)
             image_surface = pygame.transform.scale(image_surface, (screen_size, screen_size))
             self.window.blit(image_surface, (0, 0))
@@ -369,8 +348,7 @@ class GridMazeEnv():
                 offset = factor / 2 - marker_size / 2 + 1  # shift marker to center of grid cell
                 agent_position = (agent_position[0] + offset, agent_position[1] + offset)
                 return agent_position
-            
-            
+
             if full_view:
                 marker_size = 50 / maze.shape[0] * 11  # scale marker size with maze size
                 factor = screen_size / maze.shape[0]
@@ -387,13 +365,10 @@ class GridMazeEnv():
                 # place agent in the center of the screen
                 agent_position = (screen_size / 2 - marker_size / 2, screen_size / 2 - marker_size / 2)
 
-            
             self.window.blit(marker_surface, agent_position)
             font = pygame.font.Font('freesansbold.ttf', 32)
             text = font.render('Score: ' + str(self.total_reward), True, (128, 128, 128))
-            self.window.blit(text, (10, 10))    
-
-
+            self.window.blit(text, (10, 10))
 
             pygame.display.update()
 
