@@ -1,11 +1,11 @@
 import time
 import pygame
 import numpy as np
-import gymnasium as gym
+# import gymnasium as gym
 from collections import namedtuple
-# import gym  # needs to be uniform for the whole code base
+import gym  # needs to be uniform for the whole code base
 
-from maze import GridMaze, get_maze_specs
+from memory_grid.maze import GridMaze, get_maze_specs
 
 # TODO all the randomization should be done in a separate file
 rand_specs = namedtuple('rand_specs', 'seed maze_not_fixed target_not_fixed agent_not_fixed sequence_not_fixed')
@@ -50,7 +50,7 @@ class GridMazeEnv():
         self.view_distance = view_distance
         self.observation_image_size = 2 * self.view_distance + 1
         self.rand_specs = get_rand_specs(rand_name)
-        self.seed = self.rand_specs.seed
+        self.random_seed = self.rand_specs.seed
         self.max_episode_steps = 200  # TODO make this a hyperparameter?
 
         self.maze_specs = get_maze_specs(env_name)
@@ -61,18 +61,24 @@ class GridMazeEnv():
         self.initialize_maze_env()
 
         self.action_space = gym.spaces.Discrete(4)  # 0: up, 1: right, 2: down, 3: left
-        self.action_space.seed(self.seed)  # seed for action_space sampler 
+        self.action_space.seed(self.random_seed)  # seed for action_space sampler
 
         self.observable_entities = [' ', '#'] + [str(t) for t in
                                                  range(self.n_targets)]  # ' ' is empty space, '#' is wall
-        image_size = 2 * self.view_distance + 1  # size of the image, e.g. 3x3, 5x5, 7x7, etc.
-        self.observation_space = gym.spaces.Dict({
-            'image': gym.spaces.Box(low=0, high=255, shape=(image_size, image_size, 3), dtype=np.uint8),
-            'target': gym.spaces.Discrete(self.n_targets),
-        })
+        # self.observation_space = gym.spaces.Dict({
+        #     'image': gym.spaces.Box(low=0, high=255, shape=(3, image_size, image_size), dtype=np.uint8),
+        #     'target': gym.spaces.Discrete(self.n_targets),
+        # })
+        image_size = 2 * self.view_distance + 1 + 2  # size of the image, e.g. 3x3, 5x5, 7x7, etc. (2 for padding with target id)
+        self.observation_space = gym.spaces.Box(low=0, high=255, shape=(3, image_size, image_size), dtype=np.uint8)
         self.render_mode = render_mode
         self.window = None
 
+    def seed(self, seed=None):
+        self.random_seed = seed
+        self.grid_maze.seed(seed)
+        self.action_space.seed(seed)
+        return seed
     def get_seed(self, for_what):
         """
         Get seed for random number generator.
@@ -84,7 +90,7 @@ class GridMazeEnv():
         if not_fixed:
             return None
         else:
-            return self.seed
+            return self.random_seed
 
     def initialize_maze_env(self):
         self.maze = self.grid_maze.entity_layer
@@ -231,15 +237,27 @@ class GridMazeEnv():
                              np.array([255, 255, 0]), np.array([0, 255, 255]), np.array([255, 0, 255])]
             return target_colors[int(entity)]
 
+
     def get_observation(self):
         visible_entities = self.observe_field_of_view()
+
+        # surround the visible entities with walls
+
+        visible_entities = np.pad(visible_entities, 1, 'constant', constant_values=str(self.current_target_id))
+
 
         image = np.zeros((visible_entities.shape[0], visible_entities.shape[1], 3), dtype=np.uint8)
         for i in range(visible_entities.shape[0]):
             for j in range(visible_entities.shape[1]):
                 image[i, j] = self.entity_to_color(visible_entities[i, j])
-        observation = {'image': image, 'target': self.current_target_id}
-        return observation
+        # create a frame around the image with the current target color
+        # pad the image array with 1 pixel on each side
+        # pixel = self.entity_to_color(str(self.current_target_id))
+        # image = pad_image(image, 1, pixel)
+        # observation = {'image': image, 'target': self.current_target_id}
+        # swap axes from hwc to chw
+        image = np.swapaxes(image, 2, 0)
+        return image
 
     def print_maze(self):
         maze = self.maze.copy()  # copy to avoid changing the original maze
@@ -315,6 +333,9 @@ class GridMazeEnv():
                 image, maze = get_maze_image()
             else:
                 image, maze = get_image_around_agent()
+            image = self.get_observation()
+            # change dimensions from (channels, width, height) to (width, height, channels)
+            image = np.transpose(image, (2, 1, 0))
 
             time.sleep(0.03)
 
@@ -361,7 +382,7 @@ class GridMazeEnv():
 
                 # Blit image and marker surfaces to window
             else:
-                marker_size = 500 / (2 * self.view_distance + 1) # scale marker size with maze size
+                marker_size = 400 / (2 * self.view_distance + 1)  # scale marker size with maze size
                 marker_surface = create_marker_surface(marker_size, target_color)
                 # place agent in the center of the screen
                 agent_position = (screen_size / 2 - marker_size / 2, screen_size / 2 - marker_size / 2)

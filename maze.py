@@ -37,13 +37,16 @@ class GridMaze():
     """
     def __init__(self, maze_specs=memory_maze_9x9, seed=None):
         # print(f'Creating GridMaze with seed {seed}')
-        self.seed = seed
-        np.random.seed(self.seed)
+        self.seed(seed)
         self.n_targets = maze_specs.n_targets
         self.maze = self.get_maze(maze_specs, seed=seed)
         self.set_entity_layer()
 
-    def get_maze(self, maze_specs, seed): 
+    def seed(self, seed):
+        self.random_seed = seed
+        np.random.seed(seed)
+
+    def get_maze(self, maze_specs, seed):
         maze = labmaze.RandomMaze(height=maze_specs.maze_size + 2,  # add outer walls (1 on each side)
                                   width=maze_specs.maze_size + 2,   # add outer walls (1 on each side)
                                   max_rooms=maze_specs.max_rooms,
@@ -69,7 +72,7 @@ class GridMaze():
     def place_targets(self):
         possible_target_positions = np.argwhere(self.entity_layer == 'G')
         while self.n_targets > len(possible_target_positions):
-            print(f'Re-generating maze: more targets than possible positions.')
+            # print(f'Re-generating maze: more targets than possible positions.')
             self.maze.regenerate()
             self.entity_layer = self.maze.entity_layer
             possible_target_positions = np.argwhere(self.entity_layer == 'G')
