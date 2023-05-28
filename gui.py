@@ -1,5 +1,7 @@
 import os
 import sys
+import numpy as np
+from collections import namedtuple
 
 sys.path.append(os.path.abspath(os.curdir))
 print(sys.path)
@@ -72,7 +74,10 @@ if __name__ == '__main__':
     parser.add_argument('--rand_name', type=str, default='motoaos42')
     args = parser.parse_args()
 
+    rand_specs = namedtuple('rand_specs', 'seed random_maze random_targets random_agent_position')
+    random_specs = rand_specs(seed=42, random_maze=False, random_targets=True, random_agent_position=True)
+    np.random.seed(random_specs.seed)  # set seed for reproducibility
     env_name = 'GridMaze{}x{}'.format(args.size, args.size)
-    env = GridMazeEnv(env_name, rand_name=args.rand_name, view_distance=args.view_distance, render_mode='human')
+    env = GridMazeEnv(env_name, random_specs=random_specs, view_distance=args.view_distance, render_mode='human')
     gui = GridMazeGUI(env, seed=42, full_view=args.full_view)
     gui.run()

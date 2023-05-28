@@ -4,37 +4,9 @@ import pygame
 import numpy as np
 from collections import namedtuple
 
-# from memory_grid.maze import GridMaze, grid_mazes
-from maze import GridMaze, grid_mazes
+from memory_grid.maze import GridMaze, grid_mazes
 
-# TODO all the randomization should be done in a separate file
-rand_specs = namedtuple('rand_specs', 'seed maze_not_fixed target_not_fixed agent_not_fixed')
-
-
-def get_rand_specs(rand_name):
-    """
-    Get randomization specifications from experiment name.
-    rand_name: name of the experiment, e.g. 'mxtxaos42'
-    return: rand_specs
-    """
-    # extract everything after the s if contains s, otherwise use 42 as seed
-    if 's' in rand_name:
-        seed = int(rand_name.split('s')[-1])
-    else:
-        seed = 42
-
-    # m means maze, t means target, a means agent
-    def not_fixed(char):
-        return rand_name.split(char)[-1][0] == 'o'  # o means not fixed
-
-    maze_not_fixed = not_fixed('m')
-    target_not_fixed = not_fixed('t')
-    agent_not_fixed = not_fixed('a')
-    return rand_specs(seed,
-                      maze_not_fixed,
-                      target_not_fixed,
-                      agent_not_fixed)
-
+rand_specs = namedtuple('rand_specs', 'seed random_maze random_targets random_agent_position')
 
 class GridMazeEnv():
     """
@@ -43,29 +15,37 @@ class GridMazeEnv():
     This environment is simpler and more compact than the standard memory environment, making it a good choice for quick prototyping or testing memory-related algorithms.
     """
 
-    def __init__(self, env_name, rand_name=None, view_distance=1, verbose=False, render_mode='human'):
-        self.verbose = verbose
+    def __init__(self, env_name, random_specs=None, view_distance=1, render_mode='human'):
         self.view_distance = view_distance
         self.observation_image_size = 2 * self.view_distance + 1
-        self.rand_specs = get_rand_specs(rand_name)
-        self.random_seed = self.rand_specs.seed
+        
+        if random_specs is None:
+            random_specs = rand_specs(None, True, True, True) 
+        self.random_seed = random_specs.seed 
+        self.random_maze = random_specs.random_maze
+        self.random_targets = random_specs.random_targets
+        self.random_agent_position = random_specs.random_agent_position 
+       
+        self.maze_seed = None if self.random_maze else self.random_seed 
+        self.agent_seed = None if self.random_agent_position else self.random_seed
+        self.target_seed = None if self.random_targets else self.random_seed 
 
         self.maze_specs = grid_mazes[env_name]
         self.n_targets = self.maze_specs.n_targets
         self.max_episode_steps = self.maze_specs.max_episode_steps
 
         self.current_target_id = None
-
-        self.grid_maze = GridMaze(self.maze_specs, seed=self.get_seed('maze'))
+        
+        self.grid_maze = GridMaze(self.maze_specs, seed=self.random_seed)
         self.initialize_maze_env()
 
         self.action_space = gym.spaces.Discrete(4)  # 0: up, 1: right, 2: down, 3: left
         self.action_space.seed(self.random_seed)  # seed for action_space sampler
 
         self.observable_entities = [' ', '#'] + [str(t) for t in range(self.n_targets)]  # ' ' empty space, '#' wall
-
         image_size = 2 * self.view_distance + 1 + 2  # size of the image, e.g. 3x3, (2 for padding with target id)
         self.observation_space = gym.spaces.Box(low=0, high=255, shape=(3, image_size, image_size), dtype=np.uint8)
+
         self.render_mode = render_mode
         self.window = None
 
@@ -74,19 +54,6 @@ class GridMazeEnv():
         self.grid_maze.seed(seed)
         self.action_space.seed(seed)
         return seed
-
-    def get_seed(self, for_what):
-        """
-        Get seed for random number generator.
-        for_what: 'environment', 'target', 'agent'
-        return: seed if for_what is not fixed, None otherwise
-        """
-        key = for_what + '_not_fixed'
-        not_fixed = getattr(self.rand_specs, key)
-        if not_fixed:
-            return None
-        else:
-            return self.random_seed
 
     def initialize_maze_env(self):
         self.maze = self.grid_maze.entity_layer
@@ -99,55 +66,27 @@ class GridMazeEnv():
     def reset(self, seed=None):
         if seed is not None:
             self.grid_maze = GridMaze(self.maze_specs, seed=seed)
-        if self.get_seed('maze') is None:
-            self.grid_maze = GridMaze(self.maze_specs, seed=self.get_seed('maze'))
+        elif self.random_maze: 
+            self.grid_maze = GridMaze(self.maze_specs, seed=self.maze_seed)
         self.initialize_maze_env()
 
-        if self.get_seed('agent') is None:
-            self.randomize_agent_position()
-        if self.get_seed('target') is None:
-            self.randomize_target_position()
-        for i, target_position in enumerate(self.target_positions):
-            # mark target positions in maze
-            self.maze[target_position[0], target_position[1]] = str(i)
+        if self.random_agent_position: 
+            rng = np.random.default_rng(seed=self.agent_seed)
+            self.agent_position = self.grid_maze.sample_agent_position(rng=rng)
+        if self.random_targets: 
+            rng = np.random.default_rng(seed=self.target_seed)
+            self.target_positions = self.grid_maze.sample_target_positions(rng=rng)
+
         return self.get_observation(), {}
-
-    def randomize_agent_position(self):
-        np.random.seed(self.get_seed('agent'))
-        self.agent_position = self.sample_free_position()
-        if self.verbose:
-            print('randomized agent position to: ', *self.agent_position)
-
-    def randomize_target_position(self):
-        np.random.seed(self.get_seed('target'))
-        self.target_positions = np.random.permutation(self.target_positions)  # permute target positions
-        if self.verbose:
-            print('randomized target positions to: ', *self.target_positions)
-
-    def sample_free_position(self):
-        position = np.random.randint(0, self.maze.shape[0], size=2)
-        while self.is_wall(position) or self.is_target(position):
-            position = np.random.randint(0, self.maze.shape[0], size=2)
-        return position
 
     def is_wall(self, position):
         return self.maze[position[0]][position[1]] == '#'
 
     def is_target(self, position):
-        """
-        Check if position is a target position.
-        position: 1D array of 2 elements (e.g. array([1, 2]))
-        target_positions: list of 1D arrays of 2 elements (e.g. [array([1, 2]), array([3, 4])])
-        return: True if position is a target position, False otherwise
-        """
         return any([np.array_equal(position, target_position) for target_position in self.target_positions])
 
     def sample_new_target_id(self):
         available_target_ids = [t for t in range(self.n_targets) if t != self.current_target_id]
-        np.random.seed(None)  # now experiments are not reproducible anymore
-        # TODO How to make experiments reproducible again?
-        # TODO Answer: use a different random number generator for sampling the target id
-        # TODO e.g. self.rng_target_sequence = np.random.default_rng(seed=42), self.rng_target_sequence.choice(available_target_ids)
         return np.random.choice(available_target_ids)
 
     def step(self, action):
@@ -187,9 +126,7 @@ class GridMazeEnv():
         return reward
 
     def reward_and_give_new_target(self):
-        self.print_if_verbose('found target', self.current_target_id)
         self.current_target_id = self.sample_new_target_id()
-        self.print_if_verbose('new target', self.current_target_id)
 
         reward = 1
         self.total_reward += reward
@@ -204,9 +141,14 @@ class GridMazeEnv():
         v = self.view_distance  # for example, v=1: 3x3, v=2: 5x5 space around agent
 
         maze = self.maze.copy()
+        
+        # mark target positions in maze
+        for i, target_position in enumerate(self.target_positions):
+            maze[target_position[0], target_position[1]] = str(i)
+
         # add a border of walls around the maze to avoid index out of bounds errors
         maze = np.pad(maze, v - 1, 'constant', constant_values='#')
-        # observation = self.maze[a[0] - v:a[0] + v + 1, a[1] - v:a[1] + v + 1]
+
         # shift all coordinates by v-1 to account for the added border
         observation = maze[a[0] - 1:a[0] + 2 * v, a[1] - 1:a[1] + 2 * v]
         return observation
@@ -214,18 +156,18 @@ class GridMazeEnv():
     def entity_to_color(self, entity):
         """
         Convert entity char to RGB color. 
-        return: 1D array of RGB values (e.g. [255, 0, 0])
+        return: 1D array of RGB values, e.g. np.array([255, 0, 0]).
         """
-        if entity == ' ':
-            return np.array([255, 255, 255])  # empty space is white 
-        elif entity == '#':
-            return np.array([0, 0, 0])  # wall is black 
-        else:
-            assert entity in ['0', '1', '2', '3', '4', '5'], 'Invalid entity: {}'.format(entity)
-            # target colors are red, green, blue, yellow, cyan, magenta
-            target_colors = [np.array([255, 0, 0]), np.array([0, 255, 0]), np.array([0, 0, 255]),
-                             np.array([255, 255, 0]), np.array([0, 255, 255]), np.array([255, 0, 255])]
-            return target_colors[int(entity)]
+        entity_to_color = {' ': np.array([255, 255, 255]),  # empty spaces are white
+                           '#': np.array([0, 0, 0]),        # walls are black
+                           '0': np.array([255, 0, 0]),      # target 0 is red
+                           '1': np.array([0, 255, 0]),      # target 1 is green
+                           '2': np.array([0, 0, 255]),      # target 2 is blue
+                           '3': np.array([255, 255, 0]),    # target 3 is yellow
+                           '4': np.array([0, 255, 255]),    # target 4 is cyan
+                           '5': np.array([255, 0, 255])}    # target 5 is magenta
+        return entity_to_color[entity]
+
 
     def get_observation(self):
         visible_entities = self.observe_field_of_view()
@@ -237,49 +179,29 @@ class GridMazeEnv():
         for i in range(visible_entities.shape[0]):
             for j in range(visible_entities.shape[1]):
                 image[i, j] = self.entity_to_color(visible_entities[i, j])
+
         image = np.swapaxes(image, 2, 0)  # swap axes to match PyTorch format (C, H, W)
         return image
 
     def print_maze(self):
-        maze = self.maze.copy()  # copy to avoid changing the original maze
-        maze[self.agent_position[0], self.agent_position[1]] = 'A'  # mark agent position
-        print(maze)
-
-    def print_observation(self):
-        observation = self.observe_field_of_view()
-        string = ''
-        for row in observation:
-            row = ''.join(row) + '\n'
-            string = string + row
-        string = string[:5] + 'A' + string[6:]  # add agent position in the middle
-        observation = string
-        print(observation)
+        print_maze(self.maze.copy(), self.agent_position, self.target_positions)
 
     def render(self, full_view=True):
 
         if self.render_mode == 'rgb_array':
-            img = self.get_observation()['image']
+            img = self.get_observation()
             return img
 
-        elif self.render_mode == 'simple':
-            if self.window is None:
-                pygame.init()
-            print('current target id:', self.current_target_id)
-            print('total reward: ', self.total_reward)
-            time.sleep(0.1)
-            if full_view:
-                self.print_maze()
-            else:
-                self.print_observation()
-
         elif self.render_mode == 'human':
-            # TODO refactor: make separate functions for full and partial view
+            maze = self.maze.copy()
 
-            def get_maze_image():
+            def get_maze_image(maze):
                 a = self.agent_position
                 v = self.view_distance
-                maze = self.maze.copy()
                 image = np.zeros((maze.shape[0], maze.shape[1], 3))
+                # mark target positions in maze
+                for i, target_position in enumerate(self.target_positions):
+                    maze[target_position[0], target_position[1]] = str(i)
 
                 for i in range(maze.shape[0]):
                     for j in range(maze.shape[1]):
@@ -288,34 +210,13 @@ class GridMazeEnv():
                         if abs(i - a[0]) > v or abs(j - a[1]) > v:  # color non-observed area 
                             image[i, j] = image[i, j] * 0.5  # zero for black, 0.5 for gray 
 
-                return image, maze
-
-            def get_image_around_agent():
-                a = self.agent_position
-                v = self.view_distance
-                maze = self.maze.copy()
-                # add a border of walls around the maze to avoid index out of bounds errors
-                maze = np.pad(maze, v - 1, 'constant', constant_values='#')
-                # shift all coordinates by v-1 to account for the added border
-                image = np.zeros((2 * v + 1, 2 * v + 1, 3))
-
-                for i in range(image.shape[0]):
-                    for j in range(image.shape[1]):
-                        # image[i, j] = self.entity_to_color(maze[a[0] - v + i, a[1] - v + j])
-                        # shift all coordinates by v-1 to account for the added border
-                        image[i, j] = self.entity_to_color(maze[a[0] + i - 1, a[1] + j - 1])
-                        # print(a[0] - v + i, a[1] - v + j)
-                        # print(i, j, image[i, j])
-
-                return image, maze
+                return image
 
             if full_view:
-                image, maze = get_maze_image()
+                image = get_maze_image(maze)
             else:
-                image, maze = get_image_around_agent()
-            image = self.get_observation()
-            # change dimensions from (channels, width, height) to (width, height, channels)
-            image = np.transpose(image, (2, 1, 0))
+                image = self.get_observation()
+                image = np.transpose(image, (2, 1, 0))  # convert to (width, height, channels) for pygame
 
             time.sleep(0.03)
 
@@ -323,7 +224,7 @@ class GridMazeEnv():
             target_color = self.entity_to_color(str(target_id))
 
             image = np.transpose(image, (1, 0, 2))  # convert to (width, height, channels) for pygame
-            screen_size = 640  # TODO make this a hyperparameter
+            screen_size = 640  
 
             if self.window is None:
                 pygame.init()
@@ -377,12 +278,79 @@ class GridMazeEnv():
             pygame.display.quit()
             pygame.quit()
 
-    def print_if_verbose(self, *args):
-        if self.verbose:
-            print(*args)
+
+def same_maze_layout(env1, env2):
+    return (env1.maze == env2.maze).all()
+
+def same_agent_position(env1, env2):
+    return (env1.agent_position == env2.agent_position).all()
+
+def same_target_positions(env1, env2):
+    for t1, t2 in zip(env1.target_positions, env2.target_positions):
+        if not (t1 == t2).all():
+            return False
+    return True 
+
+def test_all_random_no_seed():
+    all_random = rand_specs(None, True, True, True)    
+    for choice in choices:
+        env1 = GridMazeEnv(choice, all_random)
+        env2 = GridMazeEnv(choice, all_random)
+        assert not same_maze_layout(env1, env2)
+        assert not same_agent_position(env1, env2)
+        assert not same_target_positions(env1, env2)
+
+def test_all_random_with_seed():
+    all_random_with_seed = rand_specs(42, True, True, True)    
+    for choice in choices:
+        env1 = GridMazeEnv(choice, all_random_with_seed)
+        env2 = GridMazeEnv(choice, all_random_with_seed)
+        assert same_maze_layout(env1, env2)
+        assert same_agent_position(env1, env2)
+        assert same_target_positions(env1, env2)
+        env3 = GridMazeEnv(choice, all_random_with_seed)
+        env3.reset()
+        assert not same_maze_layout(env1, env3)
+        assert not same_agent_position(env1, env3)
+        assert not same_target_positions(env1, env3)
+
+def test_all_fixed():
+    all_fixed = rand_specs(42, False, False, False)
+    for choice in choices:
+        env1 = GridMazeEnv(choice, all_fixed)
+        env2 = GridMazeEnv(choice, all_fixed)
+        assert same_maze_layout(env1, env2)
+        assert same_agent_position(env1, env2)
+        assert same_target_positions(env1, env2)
+        env3 = GridMazeEnv(choice, all_fixed)
+        env3.reset()
+        assert same_maze_layout(env1, env3)
+        assert same_agent_position(env1, env3)
+        assert same_target_positions(env1, env3)
+
+def test_maze_fixed():
+    for agent_random in [True, False]:
+        for target_random in [True, False]:
+            agent_target = rand_specs(42, False, target_random, agent_random) 
+            for choice in choices:
+                env1 = GridMazeEnv(choice, agent_target)
+                env2 = GridMazeEnv(choice, agent_target)
+                assert same_maze_layout(env1, env2)
+                assert same_agent_position(env1, env2)
+                assert same_target_positions(env1, env2)
+                env3 = GridMazeEnv(choice, agent_target)
+                env3.reset()
+                assert same_maze_layout(env1, env3)
+                if not agent_random:
+                    assert same_agent_position(env1, env3) 
+                if not target_random:
+                    assert same_target_positions(env1, env3) 
 
 
 if __name__ == '__main__':
-    choices = ['GridMaze9x9', 'GridMaze11x11', 'GridMaze13x13', 'GridMaze15x15']
-    env = GridMazeEnv(choices[0], verbose=True)
-    env.print_maze()
+    test_all_random_no_seed()
+    test_all_random_with_seed()
+    test_all_fixed()
+    test_maze_fixed()
+
+
