@@ -4,7 +4,8 @@ import pygame
 import numpy as np
 from collections import namedtuple
 
-from memory_grid.maze import GridMaze, grid_mazes
+# from memory_grid.maze import GridMaze, grid_mazes
+from maze import GridMaze, grid_mazes, print_maze
 
 rand_specs = namedtuple('rand_specs', 'seed random_maze random_targets random_agent_position')
 
@@ -67,6 +68,7 @@ class GridMazeEnv():
         if seed is not None:
             self.grid_maze = GridMaze(self.maze_specs, seed=seed)
         elif self.random_maze: 
+            # random maze automatically samples new agent and target positions
             self.grid_maze = GridMaze(self.maze_specs, seed=self.maze_seed)
         self.initialize_maze_env()
 
@@ -82,8 +84,8 @@ class GridMazeEnv():
     def is_wall(self, position):
         return self.maze[position[0]][position[1]] == '#'
 
-    def is_target(self, position):
-        return any([np.array_equal(position, target_position) for target_position in self.target_positions])
+    # def is_target(self, position):
+        # return any([np.array_equal(position, target_position) for target_position in self.target_positions])
 
     def sample_new_target_id(self):
         available_target_ids = [t for t in range(self.n_targets) if t != self.current_target_id]
@@ -348,9 +350,12 @@ def test_maze_fixed():
 
 
 if __name__ == '__main__':
+    choices = ['GridMaze7x7', 'GridMaze9x9', 'GridMaze11x11', 'GridMaze13x13', 'GridMaze15x15']
     test_all_random_no_seed()
     test_all_random_with_seed()
     test_all_fixed()
     test_maze_fixed()
-
+    
+    # TODO make running maze globally reproducible
+    # TODO extract plotting into another file  
 
