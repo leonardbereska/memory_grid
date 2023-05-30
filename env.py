@@ -4,7 +4,8 @@ import pygame
 import numpy as np
 from collections import namedtuple
 
-from memory_grid.maze import GridMaze, grid_mazes
+# from memory_grid.maze import GridMaze, grid_mazes
+from maze import GridMaze, grid_mazes
 
 rand_specs = namedtuple('rand_specs', 'seed random_maze random_targets random_agent_position')
 
@@ -266,10 +267,11 @@ class GridMazeEnv():
                 # place agent in the center of the screen
                 agent_position = (screen_size / 2 - marker_size / 2, screen_size / 2 - marker_size / 2)
 
-            self.window.blit(marker_surface, agent_position)
-            font = pygame.font.Font('freesansbold.ttf', 32)
-            text = font.render('Score: ' + str(self.total_reward), True, (128, 128, 128))
-            self.window.blit(text, (10, 10))
+            if full_view:
+                self.window.blit(marker_surface, agent_position)
+                font = pygame.font.Font('freesansbold.ttf', 32)
+                text = font.render('Score: ' + str(self.total_reward), True, (128, 128, 128))
+                self.window.blit(text, (10, 10))
 
             pygame.display.update()
 

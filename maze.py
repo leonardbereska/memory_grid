@@ -3,8 +3,8 @@ import numpy as np
 from collections import namedtuple
 
 maze_specs = namedtuple('maze_specs', 'maze_size n_targets max_rooms room_min_size room_max_size max_episode_steps')
-grid_mazes = {'GridMaze7x7': maze_specs(7, 2, 6, 3, 5, 100),
-              'GridMaze9x9': maze_specs(9, 3, 6, 3, 5, 200),
+grid_mazes = {'GridMaze7x7': maze_specs(7, 2, 4, 3, 5, 100),
+              'GridMaze9x9': maze_specs(9, 3, 4, 3, 5, 200),
               'GridMaze11x11': maze_specs(11, 4, 6, 3, 5, 300),
               'GridMaze13x13': maze_specs(13, 5, 6, 3, 5, 400),
               'GridMaze15x15': maze_specs(15, 6, 9, 3, 3, 500)}
