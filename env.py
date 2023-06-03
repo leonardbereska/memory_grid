@@ -4,8 +4,8 @@ import pygame
 import numpy as np
 from collections import namedtuple
 
-# from memory_grid.maze import GridMaze, grid_mazes
-from maze import GridMaze, grid_mazes
+from memory_grid.maze import GridMaze, grid_mazes
+# from maze import GridMaze, grid_mazes
 
 rand_specs = namedtuple('rand_specs', 'seed random_maze random_targets random_agent_position')
 
